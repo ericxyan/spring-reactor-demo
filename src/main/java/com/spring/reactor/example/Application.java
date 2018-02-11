@@ -4,11 +4,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import reactor.Environment;
 import reactor.bus.EventBus;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static reactor.bus.selector.Selectors.$;
 
@@ -16,29 +20,42 @@ import static reactor.bus.selector.Selectors.$;
 @EnableAutoConfiguration
 @ComponentScan
 public class Application implements CommandLineRunner {
+    private static final int NUMBER_OF_QUOTES = 10;
 
-	@Autowired
-	private EventBus eventBus;
+    @Autowired
+    private EventBus eventBus;
 
-	@Autowired
-	private NotificationConsumer notificationConsumer;
+    @Autowired
+    private Receiver receiver;
 
-	@Bean
-	Environment env(){
-		return Environment.initializeIfEmpty().assignErrorJournal();
-	}
+    @Autowired
+    private Publisher publisher;
 
-	@Bean
-	EventBus createEventBus(Environment env) {
-		return EventBus.create(env, Environment.THREAD_POOL);
-	}
+    @Bean
+    Environment env() {
+        return Environment.initializeIfEmpty().assignErrorJournal();
+    }
 
-	@Override
-	public void run(String... strings) throws Exception {
-		eventBus.on($(Topic.NOTIFICATION), notificationConsumer);
-	}
+    @Bean
+    EventBus createEventBus(Environment env) {
+        return EventBus.create(env, Environment.THREAD_POOL);
+    }
 
-	public static void main(String[] args) {
-		SpringApplication.run(Application.class, args);
-	}
+    @Bean
+    public CountDownLatch latch() {
+        return new CountDownLatch(NUMBER_OF_QUOTES);
+    }
+
+    @Override
+    public void run(String... strings) throws Exception {
+        eventBus.on($(Topic.QUOTE), receiver);
+        publisher.publishQuotes(NUMBER_OF_QUOTES);
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        ConfigurableApplicationContext app = SpringApplication.run(Application.class, args);
+
+        app.getBean(CountDownLatch.class).await(1, TimeUnit.SECONDS);
+        app.getBean(Environment.class).shutdown();
+    }
 }
